@@ -1,3 +1,5 @@
+const auth = require('../middleware/auth');
+const authorize = require('../middleware/authorize');
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -8,7 +10,7 @@ const User = require('../models/User');
 // POST /api/auth/register
 // ================================
 
-router.post('/register', async (req, res) => {
+router.post('/register', auth, authorize('admin'), async (req, res) => {
   try {
     // 1. Get the data from the request body
     const { username, email, password } = req.body;
@@ -64,7 +66,7 @@ router.post('/register', async (req, res) => {
 // POST /api/auth/login
 // ================================
 
-router.post('/login', async (req, res) => {
+router.post('/register', auth, authorize('admin'), async (req, res) => {
   try {
     // 1. Get email and password from request
     const { email, password } = req.body;
@@ -150,6 +152,48 @@ router.put('/make-admin/:userId', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+// GET all users (admin only)
+router.get('/users', auth, authorize('admin'), async (req, res) => {
+  try {
+    const users = await User.find({}, '-password').sort({ createdAt: -1 });
+    res.json({ count: users.length, users });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT update user role (admin only)
+router.put('/users/:id/role', auth, authorize('admin'), async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!['admin', 'member', 'viewer'].includes(role)) {
+      return res.status(400).json({ message: 'Invalid role' });
+    }
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { role },
+      { new: true, select: '-password' }
+    );
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE user (admin only)
+router.delete('/users/:id', auth, authorize('admin'), async (req, res) => {
+  try {
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ message: "You can't delete yourself" });
+    }
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json({ message: 'User deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 module.exports = router;
