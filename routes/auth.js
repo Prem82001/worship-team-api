@@ -1,28 +1,24 @@
-const auth = require('../middleware/auth');
-const authorize = require('../middleware/authorize');
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const auth = require('../middleware/auth');
+const authorize = require('../middleware/authorize');
 
 // ================================
-// REGISTER — Create a new account
+// REGISTER (Admin only)
 // POST /api/auth/register
 // ================================
-
 router.post('/register', auth, authorize('admin'), async (req, res) => {
   try {
-    // 1. Get the data from the request body
-    const { username, email, password } = req.body;
+    const { username, email, password, role } = req.body;
 
-    // 2. Check if all fields are provided
     if (!username || !email || !password) {
       return res.status(400).json({
         message: 'Please provide username, email, and password'
       });
     }
 
-    // 3. Check if user already exists (by email)
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({
@@ -30,23 +26,18 @@ router.post('/register', auth, authorize('admin'), async (req, res) => {
       });
     }
 
-    // 4. Hash the password
-    //    "salt" adds random characters to make the hash unique
-    //    10 = number of rounds (higher = more secure but slower)
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 5. Create the user in the database
     const newUser = new User({
       username,
       email,
-      password: hashedPassword   // NEVER store plain text password!
+      password: hashedPassword,
+      role: role || 'viewer'
     });
 
-    // 6. Save to database
     const savedUser = await newUser.save();
 
-    // 7. Send back success (don't send password back!)
     res.status(201).json({
       message: 'User registered successfully!',
       user: {
@@ -56,48 +47,35 @@ router.post('/register', auth, authorize('admin'), async (req, res) => {
         role: savedUser.role
       }
     });
-
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
+
 // ================================
-// LOGIN — Get a JWT token
+// LOGIN
 // POST /api/auth/login
 // ================================
-
-router.post('/register', auth, authorize('admin'), async (req, res) => {
+router.post('/login', async (req, res) => {
   try {
-    // 1. Get email and password from request
     const { email, password } = req.body;
 
-    // 2. Check if both fields are provided
     if (!email || !password) {
       return res.status(400).json({
         message: 'Please provide email and password'
       });
     }
 
-    // 3. Find the user by email
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({
-        message: 'Invalid email or password'
-      });
+      return res.status(400).json({ message: 'Invalid email or password' });
     }
 
-    // 4. Compare the password with the hashed password
-    //    bcrypt takes "prem123456" and checks it against "$2a$10$xK8f..."
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({
-        message: 'Invalid email or password'
-      });
+      return res.status(400).json({ message: 'Invalid email or password' });
     }
 
-    // 5. Create a JWT token
-    //    This token contains the user's id and role
-    //    It expires in 24 hours
     const token = jwt.sign(
       {
         id: user._id,
@@ -108,7 +86,6 @@ router.post('/register', auth, authorize('admin'), async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    // 6. Send back the token
     res.json({
       message: 'Login successful!',
       token: token,
@@ -119,16 +96,15 @@ router.post('/register', auth, authorize('admin'), async (req, res) => {
         role: user.role
       }
     });
-
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
+
 // ================================
-// MAKE ADMIN — Temporary route for setup
+// MAKE ADMIN (Setup helper)
 // PUT /api/auth/make-admin/:userId
 // ================================
-
 router.put('/make-admin/:userId', async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(
@@ -154,7 +130,11 @@ router.put('/make-admin/:userId', async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
-// GET all users (admin only)
+
+// ================================
+// GET ALL USERS (Admin only)
+// GET /api/auth/users
+// ================================
 router.get('/users', auth, authorize('admin'), async (req, res) => {
   try {
     const users = await User.find({}, '-password').sort({ createdAt: -1 });
@@ -164,7 +144,10 @@ router.get('/users', auth, authorize('admin'), async (req, res) => {
   }
 });
 
-// PUT update user role (admin only)
+// ================================
+// UPDATE USER ROLE (Admin only)
+// PUT /api/auth/users/:id/role
+// ================================
 router.put('/users/:id/role', auth, authorize('admin'), async (req, res) => {
   try {
     const { role } = req.body;
@@ -183,7 +166,10 @@ router.put('/users/:id/role', auth, authorize('admin'), async (req, res) => {
   }
 });
 
-// DELETE user (admin only)
+// ================================
+// DELETE USER (Admin only)
+// DELETE /api/auth/users/:id
+// ================================
 router.delete('/users/:id', auth, authorize('admin'), async (req, res) => {
   try {
     if (req.params.id === req.user.id) {
@@ -196,4 +182,5 @@ router.delete('/users/:id', auth, authorize('admin'), async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
 module.exports = router;
