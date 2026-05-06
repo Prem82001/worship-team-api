@@ -1,112 +1,93 @@
-const router = require('express').Router();
+const express = require('express');
+const router = express.Router();
 const Schedule = require('../models/Schedule');
 const auth = require('../middleware/auth');
 const authorize = require('../middleware/authorize');
 
-// All routes require login
 router.use(auth);
 
-// ================================
-// GET ALL SCHEDULES
-// GET /api/schedules
-// ================================
+// GET all schedules
 router.get('/', async (req, res) => {
   try {
+    const { month, year } = req.query;
     let query = {};
 
-    // Filter by month and year
-    if (req.query.month && req.query.year) {
-      const startDate = new Date(req.query.year, req.query.month - 1, 1);
-      const endDate = new Date(req.query.year, req.query.month, 0);
-      query.date = { $gte: startDate, $lte: endDate };
+    if (month && year) {
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 1);
+      query.date = { $gte: startDate, $lt: endDate };
     }
 
     const schedules = await Schedule.find(query)
-      .populate('setlist', 'title')
       .populate('team.vocals', 'name role')
       .populate('team.musicians.member', 'name role')
       .populate('team.ppt', 'name')
-      .populate('createdBy', 'username')
+      .populate('team.soundEngineer', 'name')
+      .populate('team.streamingOperator', 'name')
+      .populate({
+        path: 'setlist',
+        populate: {
+          path: 'songs.song'
+        }
+      })
       .sort({ date: 1 });
 
-    res.json({
-      count: schedules.length,
-      schedules
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.json({ count: schedules.length, schedules });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-// ================================
-// GET ONE SCHEDULE
-// GET /api/schedules/:id
-// ================================
+// GET single schedule
 router.get('/:id', async (req, res) => {
   try {
     const schedule = await Schedule.findById(req.params.id)
-      .populate('setlist')
-      .populate('team.vocals', 'name role phone')
-      .populate('team.musicians.member', 'name role phone')
-      .populate('team.ppt', 'name phone')
-      .populate('createdBy', 'username');
-
-    if (!schedule) {
-      return res.status(404).json({ message: 'Schedule not found' });
-    }
-    res.json(schedule);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
-
-// ================================
-// CREATE A SCHEDULE
-// POST /api/schedules
-// Admin and member only
-// ================================
-router.post('/', authorize('admin', 'member'), async (req, res) => {
-  try {
-    const { date, title, setlist, team, notes } = req.body;
-
-    if (!date || !title) {
-      return res.status(400).json({
-        message: 'Please provide a date and title'
-      });
-    }
-
-    const newSchedule = new Schedule({
-      date,
-      title,
-      setlist,
-      team,
-      notes,
-      createdBy: req.user.id
-    });
-
-    const saved = await newSchedule.save();
-
-    const populated = await Schedule.findById(saved._id)
-      .populate('setlist', 'title')
       .populate('team.vocals', 'name role')
       .populate('team.musicians.member', 'name role')
       .populate('team.ppt', 'name')
-      .populate('createdBy', 'username');
+      .populate('team.soundEngineer', 'name')
+      .populate('team.streamingOperator', 'name')
+      .populate({
+        path: 'setlist',
+        populate: {
+          path: 'songs.song'
+        }
+      });
 
-    res.status(201).json({
-      message: 'Schedule created successfully!',
-      schedule: populated
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    if (!schedule) return res.status(404).json({ message: 'Schedule not found' });
+    res.json(schedule);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-// ================================
-// UPDATE A SCHEDULE
-// PUT /api/schedules/:id
-// Admin and member only
-// ================================
+// POST create schedule
+router.post('/', authorize('admin', 'member'), async (req, res) => {
+  try {
+    const schedule = new Schedule({
+      ...req.body,
+      createdBy: req.user.id
+    });
+    await schedule.save();
+
+    const populated = await Schedule.findById(schedule._id)
+      .populate('team.vocals', 'name role')
+      .populate('team.musicians.member', 'name role')
+      .populate('team.ppt', 'name')
+      .populate('team.soundEngineer', 'name')
+      .populate('team.streamingOperator', 'name')
+      .populate({
+        path: 'setlist',
+        populate: { path: 'songs.song' }
+      });
+
+    res.status(201).json(populated);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// PUT update schedule
 router.put('/:id', authorize('admin', 'member'), async (req, res) => {
   try {
     const schedule = await Schedule.findByIdAndUpdate(
@@ -114,43 +95,31 @@ router.put('/:id', authorize('admin', 'member'), async (req, res) => {
       req.body,
       { new: true, runValidators: true }
     )
-      .populate('setlist', 'title')
       .populate('team.vocals', 'name role')
       .populate('team.musicians.member', 'name role')
       .populate('team.ppt', 'name')
-      .populate('createdBy', 'username');
+      .populate('team.soundEngineer', 'name')
+      .populate('team.streamingOperator', 'name')
+      .populate({
+        path: 'setlist',
+        populate: { path: 'songs.song' }
+      });
 
-    if (!schedule) {
-      return res.status(404).json({ message: 'Schedule not found' });
-    }
-
-    res.json({
-      message: 'Schedule updated successfully!',
-      schedule
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    if (!schedule) return res.status(404).json({ message: 'Schedule not found' });
+    res.json(schedule);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 });
 
-// ================================
-// DELETE A SCHEDULE
-// DELETE /api/schedules/:id
-// Admin only
-// ================================
+// DELETE schedule
 router.delete('/:id', authorize('admin'), async (req, res) => {
   try {
     const schedule = await Schedule.findByIdAndDelete(req.params.id);
-
-    if (!schedule) {
-      return res.status(404).json({ message: 'Schedule not found' });
-    }
-
-    res.json({
-      message: `Schedule "${schedule.title}" has been removed`
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    if (!schedule) return res.status(404).json({ message: 'Schedule not found' });
+    res.json({ message: 'Schedule deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

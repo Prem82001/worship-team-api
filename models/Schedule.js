@@ -33,6 +33,14 @@ const scheduleSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Member'
     },
+    soundEngineer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Member'
+    },
+    streamingOperator: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Member'
+    },
     bibleReading: {
       type: String,
       trim: true
@@ -54,8 +62,6 @@ const scheduleSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }
-}, {
-  timestamps: true
-});
+}, { timestamps: true });
 
 module.exports = mongoose.model('Schedule', scheduleSchema);
